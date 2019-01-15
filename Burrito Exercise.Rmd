@@ -1,0 +1,254 @@
+---
+title: "Burrito Exercise"
+author: "Sydney Dieter,  Wulf Novak,  Xie Shuchen"
+date: "STAT 440 | Spring 2018"
+output:
+  ioslides_presentation:
+    widescreen: yes
+  beamer_presentation: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 10)
+options(width = 65, digits=3)
+```
+
+## Research Question
+
+
+
+- How does hunger level and cost effect the overall rating of the burrito? 
+
+## Data processing
+
+- We prepared the data by removing the rows that didn't have a data entry. 
+
+
+
+```{r,echo=FALSE}
+ rm(list=ls())
+ load("burritodata.Rda")
+ data = burrito
+ Dat = cbind(data$overall, data$Cost, data$Hunger, data$Reviewer)
+ x = Dat[, -1] 
+ y = Dat[, 1] 
+```
+
+```{r,results='hide'}
+ stopifnot(complete.cases(y) != is.na(y))
+ ok = complete.cases(x, y)
+ x = x[ok,]
+ y = y[ok]
+ z = x[,3]
+``` 
+
+```{r,echo=FALSE}
+x <- data.matrix(cbind(as.numeric(x[,1]),as.numeric(x[,2])))
+y <- as.numeric(y)
+```
+
+## Model
+1) BLMM 
+2) BLM
+
+Block Gibbs sampler 
+
+$$Y_{ij}|\alpha, \beta, \gamma_j, \sigma^{-2} \sim N(\alpha + X_{ij}^T\beta + \gamma_j, \sigma^2)$$
+$$\alpha \sim Flat$$
+$$\beta \sim N(0, \tau^2I)$$
+$$\gamma_j|\kappa^{-2} \sim N(0, \kappa^2)$$
+$$\sigma^{-2} \sim Gamma(a_1, a_2)$$
+$$\kappa^{-2} \sim Gamma(b_1, b_2)$$
+
+
+
+## Diagnostics
+
+- Check convergence
+
+```{r,echo=FALSE}
+BLMM <- function(y,x,z,S=10000,mu=0,tau=1000,a1=0.01, a2=0.01, b1=0.01, b2=0.01){
+
+ # create the variables now to avoid repeating this calculation each step
+ n <- nrow(x)
+ p <- ncol(x)
+ if(is.null(p)) p <- 1
+ g <- length(unique(z))
+ X <- cbind(1,x,model.matrix(~z-1)) # add intercept and random effect indicators
+ Xy <- t(X)%*%y
+ XX <- t(X)%*%X
+
+ # Places to store results
+ beta_results <- matrix(NA, S, ncol(X))
+ sig2inv_results <- rep(NA,S)
+ kappa2inv_results <- rep(NA,S)
+
+ # starting values
+ sig2inv <- 1/var(y)
+ kappa2inv <- 1/var(aggregate(y,by=list(z),mean)$x)
+
+ # MCMC!!!!
+ for(s in 1:S){
+
+ # update beta including intercept
+ tau2inv <- c(0,rep(1/tau^2,p), rep(kappa2inv,g))
+ v <- chol2inv(chol((sig2inv*XX+diag(tau2inv))))
+ beta <- t(chol(v)) %*% rnorm(ncol(X)) + v %*% ( sig2inv*Xy +tau2inv*mu )
+
+ #update sig2inv
+ sig2inv <- rgamma(1, a1 + length(y)/2, a2 + sum((y-X%*%beta)^2)/2 )
+
+ #update sig2inv
+ kappa2inv <- rgamma(1, b1 + g/2, b2 + sum((beta[-c(1:(1+p))])^2)/2 )
+ # beta[2:3]
+
+ # store results
+ beta_results[s,] <- beta
+ sig2inv_results[s] <- sig2inv
+ kappa2inv_results[s] <- kappa2inv
+
+ }
+
+
+
+ return(list(alpha=beta_results[,1],beta1=beta_results[,2],beta2=beta_results[,3],
+ gamma=beta_results[,-c(1:(1+p))],kappa=sqrt(1/kappa2inv_results),sigma=(sqrt(1/sig2inv_results))))
+
+
+
+ }
+ Model1 = BLMM(y,x,z)
+ 
+ par(mfrow=c(2,3))
+ # par(mfrow=c(1,1))
+ plot(Model1$alpha, type="l", las=1)
+ plot(Model1$beta1, type="l", las=1)
+ plot(Model1$beta2, type="l", las=1)
+ matplot(Model1$gamma, type="l", las=1)
+ plot(Model1$kappa, type="l", las=1)
+ plot(Model1$sigma, type="l", las=1)
+```
+
+## Diagnostics
+
+- ACF
+
+```{r,echo=FALSE}
+ par(mfrow=c(1,3))
+ acf(Model1$alpha)
+ acf(Model1$beta1)
+ acf(Model1$beta2)
+```
+
+## Diagnostics
+
+- Check convergence
+
+```{r,echo=FALSE}
+BGS = function(y,x,S=10000, a1=0.01, a2=0.01){
+
+ n<- length(y)
+ X <- data.matrix(cbind(rep(1,n), x))
+ XX <-t(X)%*%X
+ XY<-t(X)%*%y
+
+
+ mu = data.matrix(c(0,0,0))
+ sig2inv=1
+ tau2inv = data.matrix(cbind(c(0,0,0),c(0,1/1000^2,0),c(0,0,1/1000^2)))
+
+ beta_0_samples = numeric(S)
+ beta_1_samples = numeric(S)
+ beta_2_samples = numeric(S)
+ sigma_2_inv_samples = numeric(S)
+
+ for (s in 1:S){
+ v<- chol2inv(chol((sig2inv*XX+diag(tau2inv))))
+ beta<- t(chol(v))%*%rnorm(ncol(X))+v%*%(sig2inv*XY+tau2inv%*%mu)
+ sig2inv<-rgamma(1,a1+length(y)/2,a2+sum((y-X%*%beta)^2)/2)
+
+ beta_0_samples[s] = beta[1,1]
+ beta_1_samples[s] = beta[2,1]
+ beta_2_samples[s] = beta[3,1]
+ sigma_2_inv_samples[s] = sig2inv
+ }
+ 
+ sigma_samples = 1/sqrt(sigma_2_inv_samples)
+
+ return(list(beta_0=beta_0_samples,beta_1=beta_1_samples,beta_2=beta_2_samples,sigma=sigma_samples))
+ }
+
+ Model2 = BGS(y,x)
+ 
+ par(mfrow=c(2,2))
+ plot(Model2$beta_0, type="l", las=1)
+ plot(Model2$beta_1, type="l", las=1)
+ plot(Model2$beta_2, type="l", las=1)
+ plot(Model2$sigma, type="l", las=1)
+```
+
+## Diagnostics
+
+- ACF
+
+```{r,echo=FALSE}
+ par(mfrow=c(1,3))
+ acf(Model2$beta_0)
+ acf(Model2$beta_1)
+ acf(Model2$beta_2)
+
+```
+
+
+## Results
+
+```{r,echo=FALSE}
+ results1 <- data.frame(
+ mean = c(mean(Model1$alpha), mean(Model1$beta1),
+ mean(Model1$beta2), mean(Model1$kappa), 
+ mean(Model1$sigma)),
+ sd = c(sd(Model1$alpha), sd(Model1$beta1),
+ sd(Model1$beta2), sd(Model1$kappa), 
+ sd(Model1$sigma)),
+ quantile_lower = c(quantile(Model1$alpha, 0.025), quantile(Model1$beta1, 0.025),
+ quantile(Model1$beta2, 0.025), quantile(Model1$kappa, 0.025),
+ quantile(Model1$sigma, 0.025)),
+ quantile_upper = c(quantile(Model1$alpha, 0.975), quantile(Model1$beta1, 0.975),
+ quantile(Model1$beta2, 0.975), quantile(Model1$kappa, 0.975),
+ quantile(Model1$sigma, 0.975)) 
+ )
+ row.names(results1) <- c("alpha", "beta1", "beta2","kappa", "sigma")
+ results1
+
+```
+
+
+
+```{r,echo=FALSE}
+ results2 <- data.frame(
+ mean = c(mean(Model2$beta_0), 
+ mean(Model2$beta_1),
+ mean(Model2$beta_2),
+ mean(Model2$sigma)),
+ sd = c(sd(Model2$beta_0), 
+ sd(Model2$beta_1),
+ sd(Model2$beta_2),
+ sd(Model2$sigma)),
+ quantile_lower = c(quantile(Model2$beta_0, 0.025), 
+ quantile(Model2$beta_1, 0.025),
+ quantile(Model2$beta_2, 0.025), 
+ quantile(Model2$sigma, 0.025)),
+ quantile_upper = c(quantile(Model2$beta_0, 0.975),
+ quantile(Model2$beta_1, 0.975),
+ quantile(Model2$beta_2, 0.975), 
+ quantile(Model2$sigma, 0.975)) 
+ )
+ row.names(results2) <- c("beta0", "beta1", "beta2", "sigma")
+ results2
+
+```
+
+## Conclusions
+
+ 
+The reviewer did not greatly effect the outcome of the overall rating of the burrito. We found that the hunger level was over twice as important as the cost of the burrito. 
