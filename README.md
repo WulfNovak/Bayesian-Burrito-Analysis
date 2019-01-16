@@ -1,6 +1,7 @@
 # Bayesian-Burrito-Analysis
 Used both the MCMC algorithm and Block Gibbs to assess the effects of hunger and cost on overall burrito rating.
 
+The rmd file shows the code used for the analysis.
 The html file gives a slideshow featuring the following: 
 * Research Question
 * Data Processing
