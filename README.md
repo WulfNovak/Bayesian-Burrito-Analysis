@@ -2,7 +2,8 @@
 Used both the MCMC algorithm and Block Gibbs to assess the effects of hunger and cost on overall burrito rating.
 
 The rmd file shows the code used for the analysis.
-The html file gives a slideshow featuring the following: 
+The PDF file shows the slideshow in an unideal non-html format. 
+The html file gives code featuring the following slides: 
 * Research Question
 * Data Processing
 * The Model Used
